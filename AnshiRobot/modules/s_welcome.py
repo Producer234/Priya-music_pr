@@ -119,7 +119,7 @@ async def greet_group(_, member: ChatMemberUpdated):
             member.chat.id,
             photo=welcomeimg,
             caption= f"""
-**ㅤㅤㅤ◦•●◉✿ ʀᴀᴅʜᴇ ʀᴀᴅʜᴇ ✿◉●•◦
+**ㅤㅤㅤ◦•●◉✿ 𝙒𝙀𝙇𝘾𝙊𝙈𝙀 ✿◉●•◦
 ▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▰
 
 ● ɢʀᴏᴜᴘ ➥ {member.chat.title}
@@ -127,7 +127,7 @@ async def greet_group(_, member: ChatMemberUpdated):
 ● ᴜsᴇʀ ɪᴅ ➥ {user.id}
 ● ᴜsᴇʀɴᴀᴍᴇ ➥ @{user.username}
 
-❖ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ➥ [๛ᴀ ɴ ꜱ ʜ ɪ ࿐](https://t.me/New_Sanatani)**
+❖ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ➥ 𝐏𝐑𝐈𝐘𝐀(https://t.me/all_priya_bot)**
 ▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▰
 """,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton (f"ᴠɪᴇᴡ ᴜsᴇʀ", url=f"https://t.me/{user.username}")]])
