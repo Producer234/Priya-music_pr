@@ -13,6 +13,8 @@ class Config(object):
     API_HASH = getenv("API_HASH",None)
    
     TOKEN = getenv("TOKEN", None)
+
+   STRING_SESSION = getenv("STRING_SESSION", None)
   
     OWNER_ID = getenv("OWNER_ID", "7291963092") 
 
