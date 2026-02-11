@@ -1,69 +1,37 @@
 import threading
+from AnshiRobot.modules.sql import BASE
 
-from sqlalchemy import Column, String, UnicodeText
-
-from AnshiRobot.modules.sql import BASE, SESSION
-
-
-class BlacklistUsers(BASE):
-    __tablename__ = "blacklistusers"
-    user_id = Column(String(14), primary_key=True)
-    reason = Column(UnicodeText)
-
-    def __init__(self, user_id, reason=None):
-        self.user_id = user_id
-        self.reason = reason
-
-
-BASE.metadata.create_all(bind=SESSION.bind, checkfirst=True)
-
-BLACKLIST_LOCK = threading.RLock()
+BL_USERS = BASE["blacklist_users"]
+LOCK = threading.RLock()
 BLACKLIST_USERS = set()
 
-
 def blacklist_user(user_id, reason=None):
-    with BLACKLIST_LOCK:
-        user = SESSION.query(BlacklistUsers).get(str(user_id))
-        if not user:
-            user = BlacklistUsers(str(user_id), reason)
-        else:
-            user.reason = reason
-
-        SESSION.add(user)
-        SESSION.commit()
-        __load_blacklist_userid_list()
-
+    with LOCK:
+        BL_USERS.update_one(
+            {"user_id": int(user_id)},
+            {"$set": {"reason": reason}},
+            upsert=True
+        )
+        BLACKLIST_USERS.add(int(user_id))
 
 def unblacklist_user(user_id):
-    with BLACKLIST_LOCK:
-        user = SESSION.query(BlacklistUsers).get(str(user_id))
-        if user:
-            SESSION.delete(user)
-
-        SESSION.commit()
-        __load_blacklist_userid_list()
-
-
-def get_reason(user_id):
-    user = SESSION.query(BlacklistUsers).get(str(user_id))
-    rep = ""
-    if user:
-        rep = user.reason
-
-    SESSION.close()
-    return rep
-
+    with LOCK:
+        BL_USERS.delete_one({"user_id": int(user_id)})
+        if int(user_id) in BLACKLIST_USERS:
+            BLACKLIST_USERS.remove(int(user_id))
 
 def is_user_blacklisted(user_id):
-    return user_id in BLACKLIST_USERS
+    return int(user_id) in BLACKLIST_USERS
 
+def get_reason(user_id):
+    user = BL_USERS.find_one({"user_id": int(user_id)})
+    return user["reason"] if user else None
 
-def __load_blacklist_userid_list():
+def __load_bl_users():
     global BLACKLIST_USERS
     try:
-        BLACKLIST_USERS = {int(x.user_id) for x in SESSION.query(BlacklistUsers).all()}
-    finally:
-        SESSION.close()
+        BLACKLIST_USERS = {x["user_id"] for x in BL_USERS.find()}
+    except:
+        pass
 
-
-__load_blacklist_userid_list()
+__load_bl_users()
