@@ -1,43 +1,19 @@
-from sqlalchemy import Column, String
+from AnshiRobot.modules.sql import BASE
 
-from AnshiRobot.modules.sql import BASE, SESSION
+NIGHTMODE = BASE["nightmode"]
 
+def add_nightmode(chat_id):
+    NIGHTMODE.insert_one({"chat_id": str(chat_id)})
 
-class Nightmode(BASE):
-    __tablename__ = "nightmode"
-    chat_id = Column(String(14), primary_key=True)
-
-    def __init__(self, chat_id):
-        self.chat_id = chat_id
-
-
-Nightmode.__table__.create(checkfirst=True)
-
-
-def add_nightmode(chat_id: str):
-    nightmoddy = Nightmode(str(chat_id))
-    SESSION.add(nightmoddy)
-    SESSION.commit()
-
-
-def rmnightmode(chat_id: str):
-    rmnightmoddy = SESSION.query(Nightmode).get(str(chat_id))
-    if rmnightmoddy:
-        SESSION.delete(rmnightmoddy)
-        SESSION.commit()
-
+def rmnightmode(chat_id):
+    NIGHTMODE.delete_one({"chat_id": str(chat_id)})
 
 def get_all_chat_id():
-    stark = SESSION.query(Nightmode).all()
-    SESSION.close()
-    return stark
+    # Return list of objects with chat_id attribute
+    res = list(NIGHTMODE.find())
+    class ChatObj:
+        def __init__(self, id): self.chat_id = id
+    return [ChatObj(x["chat_id"]) for x in res]
 
-
-def is_nightmode_indb(chat_id: str):
-    try:
-        s__ = SESSION.query(Nightmode).get(str(chat_id))
-        if s__:
-            return str(s__.chat_id)
-    finally:
-        SESSION.close()
-      
+def is_nightmode_indb(chat_id):
+    return NIGHTMODE.find_one({"chat_id": str(chat_id)}) is not None
