@@ -1,77 +1,29 @@
 import threading
+from AnshiRobot.modules.sql import BASE
 
-from sqlalchemy import BigInteger, Column, UnicodeText
-
-from AnshiRobot.modules.sql import BASE, SESSION
-
-
-class UserInfo(BASE):
-    __tablename__ = "userinfo"
-    user_id = Column(BigInteger, primary_key=True)
-    info = Column(UnicodeText)
-
-    def __init__(self, user_id, info):
-        self.user_id = user_id
-        self.info = info
-
-    def __repr__(self):
-        return "<User info %d>" % self.user_id
-
-
-class UserBio(BASE):
-    __tablename__ = "userbio"
-    user_id = Column(BigInteger, primary_key=True)
-    bio = Column(UnicodeText)
-
-    def __init__(self, user_id, bio):
-        self.user_id = user_id
-        self.bio = bio
-
-    def __repr__(self):
-        return "<User info %d>" % self.user_id
-
-
-UserInfo.__table__.create(checkfirst=True)
-UserBio.__table__.create(checkfirst=True)
-
-INSERTION_LOCK = threading.RLock()
-
+USERINFO = BASE["user_info"]
+LOCK = threading.RLock()
 
 def get_user_me_info(user_id):
-    userinfo = SESSION.query(UserInfo).get(user_id)
-    SESSION.close()
-    if userinfo:
-        return userinfo.info
-    return None
-
+    res = USERINFO.find_one({"user_id": int(user_id)})
+    return res["info"] if res else None
 
 def set_user_me_info(user_id, info):
-    with INSERTION_LOCK:
-        userinfo = SESSION.query(UserInfo).get(user_id)
-        if userinfo:
-            userinfo.info = info
-        else:
-            userinfo = UserInfo(user_id, info)
-        SESSION.add(userinfo)
-        SESSION.commit()
-
+    with LOCK:
+        USERINFO.update_one(
+            {"user_id": int(user_id)},
+            {"$set": {"info": info}},
+            upsert=True
+        )
 
 def get_user_bio(user_id):
-    userbio = SESSION.query(UserBio).get(user_id)
-    SESSION.close()
-    if userbio:
-        return userbio.bio
-    return None
-
+    res = USERINFO.find_one({"user_id": int(user_id)})
+    return res.get("bio") if res else None
 
 def set_user_bio(user_id, bio):
-    with INSERTION_LOCK:
-        userbio = SESSION.query(UserBio).get(user_id)
-        if userbio:
-            userbio.bio = bio
-        else:
-            userbio = UserBio(user_id, bio)
-
-        SESSION.add(userbio)
-        SESSION.commit()
-      
+    with LOCK:
+        USERINFO.update_one(
+            {"user_id": int(user_id)},
+            {"$set": {"bio": bio}},
+            upsert=True
+        )
