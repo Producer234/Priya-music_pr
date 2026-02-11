@@ -1,47 +1,24 @@
-from sqlalchemy import Column, Numeric, String
+from AnshiRobot.modules.sql import BASE
 
-from AnshiRobot.modules.sql import BASE, SESSION
+FSUB = BASE["force_subscribe"]
 
-
-class forceSubscribe(BASE):
-    __tablename__ = "forceSubscribe"
-    chat_id = Column(Numeric, primary_key=True)
-    channel = Column(String)
-
-    def __init__(self, chat_id, channel):
-        self.chat_id = chat_id
+# Helper object
+class FSubObj:
+    def __init__(self, channel):
         self.channel = channel
 
-
-forceSubscribe.__table__.create(checkfirst=True)
-
-
 def fs_settings(chat_id):
-    try:
-        return (
-            SESSION.query(forceSubscribe)
-            .filter(forceSubscribe.chat_id == chat_id)
-            .one()
-        )
-    except:
-        return None
-    finally:
-        SESSION.close()
-
+    data = FSUB.find_one({"chat_id": str(chat_id)})
+    if data:
+        return FSubObj(data["channel"])
+    return None
 
 def add_channel(chat_id, channel):
-    adder = SESSION.query(forceSubscribe).get(chat_id)
-    if adder:
-        adder.channel = channel
-    else:
-        adder = forceSubscribe(chat_id, channel)
-    SESSION.add(adder)
-    SESSION.commit()
-
+    FSUB.update_one(
+        {"chat_id": str(chat_id)},
+        {"$set": {"channel": channel}},
+        upsert=True
+    )
 
 def disapprove(chat_id):
-    rem = SESSION.query(forceSubscribe).get(chat_id)
-    if rem:
-        SESSION.delete(rem)
-        SESSION.commit()
-
+    FSUB.delete_one({"chat_id": str(chat_id)})
