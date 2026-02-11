@@ -1,101 +1,99 @@
 {
-    "name": "Anshi ROBOT",
-    "description": "Telegram Group Management Bot.",
-    "logo": "https://telegra.ph/file/848767ec8203835c68a1f.jpg",
-    "keywords": [
-       "telegram",
-       "modular",
-       "group",
-       "manager"
-    ],   
- "repository": "https://github.com/BadshahAk/AnshiRobot",
- "stack": "heroku-24",
- "addons": [
-    {
-       "options": {
-          "version": "15"
-       },
-       "plan": "heroku-postgresql"
-    }
- ],
- "env": {
+  "name": "Anshi ROBOT",
+  "description": "Telegram Group Management Bot (MongoDB Version).",
+  "logo": "https://telegra.ph/file/848767ec8203835c68a1f.jpg",
+  "keywords": [
+    "telegram",
+    "modular",
+    "group",
+    "manager",
+    "music"
+  ],
+  "repository": "https://github.com/BadshahAk/AnshiRobot",
+  "stack": "heroku-24",
+  "env": {
     "API_ID": {
-       "description": "Get this value from my.telegram.org/apps.",
-       "required": true,
-       "value": "6435225"
+      "description": "Get this value from my.telegram.org/apps.",
+      "required": true,
+      "value": "6435225"
     },
     "API_HASH": {
-       "description": "Get this value from my.telegram.org/apps.",
-       "required": true,
-       "value": "4e984ea35f854762dcde906dce426c2d"
-    },
-    "ALLOW_EXCL": {
-       "description": "Set this to True if you want ! to be a command prefix along with /. Recommended is True",
-       "value": "True"
-    },
-    "DEL_CMDS": {
-       "description": "Set this to True if you want to delete command messages from users who don't have the perms to run that command.",
-       "value": "True"
-    },
-    "ENV": {
-       "description": "Setting this to ANYTHING will enable environment variables. Leave it as it is",
-       "required": true,
-       "value": "True"
-    },
-    "EVENT_LOGS": {
-       "description": "Event logs channel to note down important bot level events, recommend to make this public. ex: '-123456'",
-       "required": true,
-       "value": "-1001929735324"
-    },
-    "MONGO_DB_URI": {
-       "description": "Required for database connections.",
-       "required": true,
-       "value": ""
-    },
-    "DATABASE_URL": {
-        "description": "enter postgesql url,,  https://www.elephantsql.com",
-        "required": false,
-        "value": ""
-    },
-    "OWNER_ID": {
-       "description": "Your user ID as an integer.",
-       "required": true,
-       "value": "6922271843"
-    },
-    "CASH_API_KEY": {
-        "description": " Get your API key from https://www.alphavantage.co/support/#api-key",
-        "required": false,
-        "value": "67AB03FW2SRJEBED"
-    },
-     "HEROKU_API_KEY": {
-       "description": "Your Heroku account api key.",
-       "required": true,
-       "value": "HRKU-3eb05edb-fc7a-41e0-9b9f-7022b8af8b2d"
-    },
-    "HEROKU_APP_NAME": {
-        "description": " Your heroku app name.",
-        "required": false,
-        "value": ""
-    },
-    "TIME_API_KEY": {
-        "description": " Get your API key from https://timezonedb.com/api",
-        "required": false,
-        "value": ""
-    },         
-    "START_IMG": {
-       "description": "Telegraph link of the image which will be shown at start command.",
-       "required": true,
-       "value": "https://telegra.ph/file/848767ec8203835c68a1f.jpg"
-    },
-    "SUPPORT_CHAT": {
-       "description": "Your Telegram support group chat username where your users will go and bother you with shit Example - The_support_chat.",
-       "required": true,
-       "value": "the_friendz"
+      "description": "Get this value from my.telegram.org/apps.",
+      "required": true,
+      "value": "4e984ea35f854762dcde906dce426c2d"
     },
     "TOKEN": {
-       "description": "Get bot token from @BotFather on TG",
-       "required": true,
-       "value": ""
+      "description": "Get bot token from @BotFather on TG",
+      "required": true,
+      "value": ""
+    },
+    "STRING_SESSION": {
+      "description": "A Pyrogram V2 String Session for the Music Assistant. Get this from a String Generator bot.",
+      "required": true,
+      "value": ""
+    },
+    "MONGO_DB_URI": {
+      "description": "Required for database connections. Get from cloud.mongodb.com.",
+      "required": true,
+      "value": ""
+    },
+    "OWNER_ID": {
+      "description": "Your user ID as an integer.",
+      "required": true,
+      "value": "6922271843"
+    },
+    "SUPPORT_CHAT": {
+      "description": "Your Telegram support group chat username.",
+      "required": true,
+      "value": "the_friendz"
+    },
+    "START_IMG": {
+      "description": "Telegraph link of the image which will be shown at start command.",
+      "required": true,
+      "value": "https://telegra.ph/file/848767ec8203835c68a1f.jpg"
+    },
+    "EVENT_LOGS": {
+      "description": "Event logs channel to note down important bot level events. ex: '-100123456'",
+      "required": true,
+      "value": "-1001929735324"
+    },
+    "LOG_CHANNEL": {
+        "description": "Channel ID for general logs (usually same as EVENT_LOGS).",
+        "required": true,
+        "value": "-1001929735324"
+    },
+    "CASH_API_KEY": {
+      "description": "Get your API key from https://www.alphavantage.co/support/#api-key",
+      "required": false,
+      "value": "67AB03FW2SRJEBED"
+    },
+    "TIME_API_KEY": {
+      "description": "Get your API key from https://timezonedb.com/api",
+      "required": false,
+      "value": ""
+    },
+    "HEROKU_API_KEY": {
+      "description": "Your Heroku account api key.",
+      "required": false,
+      "value": ""
+    },
+    "HEROKU_APP_NAME": {
+      "description": "Your heroku app name.",
+      "required": false,
+      "value": ""
+    },
+    "ALLOW_EXCL": {
+      "description": "Set this to True if you want ! to be a command prefix along with /.",
+      "value": "True"
+    },
+    "DEL_CMDS": {
+      "description": "Set this to True if you want to delete command messages.",
+      "value": "True"
+    },
+    "ENV": {
+      "description": "Setting this to ANYTHING will enable environment variables. Leave it as it is",
+      "required": true,
+      "value": "True"
     }
- }
+  }
 }
