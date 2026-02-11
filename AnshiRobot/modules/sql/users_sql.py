@@ -7,6 +7,12 @@ CHAT_MEMBERS = BASE["chat_members"]
 
 INSERTION_LOCK = threading.RLock()
 
+# Helper class that works as both Object (chat.chat_id) and Dict (chat["chat_id"])
+# This fixes the conflict between dbcleanup.py and users.py
+class HybridObj(dict):
+    def __getattr__(self, item):
+        return self.get(item)
+
 def ensure_bot_in_db():
     pass
 
@@ -30,6 +36,7 @@ def update_user(user_id, username, chat_id=None, chat_name=None):
             )
 
 def get_userid_by_name(username):
+    # Returns list of dicts. extraction.py uses this.
     return list(USERS.find({"username": {"$regex": f"^{username}$", "$options": "i"}}))
 
 def get_name_by_userid(user_id):
@@ -39,15 +46,20 @@ def get_chat_members(chat_id):
     return list(CHAT_MEMBERS.find({"chat_id": str(chat_id)}))
 
 def get_all_chats():
-    # Adapting to return objects compatible with existing code
+    # Returns HybridObj to satisfy both chat.chat_id and chat["chat_id"] usage
     chats = list(CHATS.find())
-    return [{"chat_id": x["_id"], "chat_name": x["chat_name"]} for x in chats]
+    return [HybridObj({"chat_id": x["_id"], "chat_name": x["chat_name"]}) for x in chats]
 
 def get_all_users():
     return list(USERS.find())
 
 def get_user_num_chats(user_id):
     return CHAT_MEMBERS.count_documents({"user_id": int(user_id)})
+
+def get_user_com_chats(user_id):
+    # This was the missing function causing the crash
+    members = CHAT_MEMBERS.find({"user_id": int(user_id)})
+    return [i["chat_id"] for i in members]
 
 def num_chats():
     return CHATS.count_documents({})
@@ -72,3 +84,8 @@ def del_user(user_id):
         USERS.delete_one({"_id": int(user_id)})
         CHAT_MEMBERS.delete_many({"user_id": int(user_id)})
         return True
+
+def rem_chat(chat_id):
+    with INSERTION_LOCK:
+        CHATS.delete_one({"_id": str(chat_id)})
+        CHAT_MEMBERS.delete_many({"chat_id": str(chat_id)})
