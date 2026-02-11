@@ -1,27 +1,13 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import scoped_session, sessionmaker
+from pymongo import MongoClient
+from AnshiRobot import MONGO_DB_URI, LOGGER
 
-from AnshiRobot import DB_URI
-from AnshiRobot import LOGGER as log
-
-if DB_URI and DB_URI.startswith("postgres://"):
-    DB_URI = DB_URI.replace("postgres://", "postgresql://", 1)
-
-
-def start() -> scoped_session:
-    engine = create_engine(DB_URI, client_encoding="utf8")
-    log.info("[PostgreSQL] Connecting to database......")
-    BASE.metadata.bind = engine
-    BASE.metadata.create_all(engine)
-    return scoped_session(sessionmaker(bind=engine, autoflush=False))
-
-
-BASE = declarative_base()
 try:
-    SESSION = start()
+    client = MongoClient(MONGO_DB_URI)
+    BASE = client["AnshiRobot_DB"]
+    LOGGER.info("[MongoDB] Connection successful, SQL Session replaced.")
 except Exception as e:
-    log.exception(f"[PostgreSQL] Failed to connect due to {e}")
+    LOGGER.exception(f"[MongoDB] Failed to connect: {e}")
     exit()
 
-log.info("[PostgreSQL] Connection successful, session started.")
+# We keep SESSION variable to prevent import errors in other modules
+SESSION = client
