@@ -1,62 +1,31 @@
 import threading
+from AnshiRobot.modules.sql import BASE
 
-from sqlalchemy import BigInteger, Column, String
+APPROVALS = BASE["approvals"]
+LOCK = threading.RLock()
 
-from AnshiRobot.modules.sql import BASE, SESSION
-
-
-class Approvals(BASE):
-    __tablename__ = "approval"
-    chat_id = Column(String(14), primary_key=True)
-    user_id = Column(BigInteger, primary_key=True)
-
-    def __init__(self, chat_id, user_id):
-        self.chat_id = str(chat_id)  # ensure string
+# Helper class for object access
+class ApproveObj:
+    def __init__(self, user_id, chat_id):
         self.user_id = user_id
-
-    def __repr__(self):
-        return "<Approve %s>" % self.user_id
-
-
-Approvals.__table__.create(checkfirst=True)
-
-APPROVE_INSERTION_LOCK = threading.RLock()
-
+        self.chat_id = chat_id
 
 def approve(chat_id, user_id):
-    with APPROVE_INSERTION_LOCK:
-        approve_user = Approvals(str(chat_id), user_id)
-        SESSION.add(approve_user)
-        SESSION.commit()
-
+    with LOCK:
+        APPROVALS.update_one(
+            {"chat_id": str(chat_id), "user_id": int(user_id)},
+            {"$set": {"approved": True}},
+            upsert=True
+        )
 
 def is_approved(chat_id, user_id):
-    try:
-        return SESSION.query(Approvals).get((str(chat_id), user_id))
-    finally:
-        SESSION.close()
-
+    return APPROVALS.find_one({"chat_id": str(chat_id), "user_id": int(user_id)}) is not None
 
 def disapprove(chat_id, user_id):
-    with APPROVE_INSERTION_LOCK:
-        disapprove_user = SESSION.query(Approvals).get((str(chat_id), user_id))
-        if disapprove_user:
-            SESSION.delete(disapprove_user)
-            SESSION.commit()
-            return True
-        else:
-            SESSION.close()
-            return False
-
+    with LOCK:
+        res = APPROVALS.delete_one({"chat_id": str(chat_id), "user_id": int(user_id)})
+        return res.deleted_count > 0
 
 def list_approved(chat_id):
-    try:
-        return (
-            SESSION.query(Approvals)
-            .filter(Approvals.chat_id == str(chat_id))
-            .order_by(Approvals.user_id.asc())
-            .all()
-        )
-    finally:
-        SESSION.close()
-      
+    results = APPROVALS.find({"chat_id": str(chat_id)})
+    return [ApproveObj(res["user_id"], res["chat_id"]) for res in results]
