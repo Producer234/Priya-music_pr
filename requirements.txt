@@ -71,4 +71,4 @@ img2pdf
 dnspython==2.2.1
 pyromod==1.5
 python-dotenv==0.21.0
-py-tgcalls==1.0.1
+py-tgcalls==1.0.9
