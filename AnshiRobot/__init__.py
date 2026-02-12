@@ -166,14 +166,15 @@ telethn = TelegramClient("Anshi", API_ID, API_HASH)
 pbot = Client("AnshiRobot", api_id=API_ID, api_hash=API_HASH, bot_token=TOKEN,in_memory=True)
 dispatcher = updater.dispatcher
 
-# FIX: Initialize Event Loop before ClientSession for newer aiohttp versions
+# FIX: Initialize Event Loop and pass it to ClientSession
 try:
     loop = asyncio.get_event_loop()
 except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-aiohttpsession = ClientSession()
+# Explicitly passing loop avoids the "no running event loop" error
+aiohttpsession = ClientSession(loop=loop)
 
 print("[INFO]: Getting Bot Info...")
 BOT_ID = dispatcher.bot.id
