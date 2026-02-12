@@ -1043,9 +1043,9 @@ def donate(update: Update, context: CallbackContext):
             DONATE_STRING, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True
         )
 
-        if OWNER_ID != 7685111725:
+        if OWNER_ID != `7753899951`:
             update.effective_message.reply_text(
-                f"❅ ᴛʜᴇ ᴅᴇᴠᴇʟᴏᴩᴇʀ ᴏғ {dispatcher.bot.first_name} sᴏᴜʀᴄᴇ ᴄᴏᴅᴇ ɪs [ɢɪᴛʜᴜʙ](https://github.com/mrtosumemon)"
+                f"❅ ᴛʜᴇ ᴅᴇᴠᴇʟᴏᴩᴇʀ ᴏғ {dispatcher.bot.first_name} sᴏᴜʀᴄᴇ ᴄᴏᴅᴇ ɪs [PR](https://t.me/OWNER_OF_PR)"
                 f"\n\n❅ ʙᴜᴛ ʏᴏᴜ ᴄᴀɴ ᴀʟsᴏ ᴅᴏɴᴀᴛᴇ ᴛᴏ ᴛʜᴇ ᴩᴇʀsᴏɴ ᴄᴜʀʀᴇɴᴛʟʏ ʀᴜɴɴɪɴɢ ᴍᴇ : [ʜᴇʀᴇ]",
                 parse_mode=ParseMode.MARKDOWN,
 
@@ -1095,7 +1095,7 @@ def main():
                     [
                         InlineKeyboardButton(
                             text="⌯ ᴀᴅᴅ ᴍᴇ ʙᴀʙʏ ⌯",
-                            url="https://t.me/AnshiRobot?startgroup=true"
+                            url="https://t.me/ALL_PRIYA_BOT?startgroup=true"
                             )
                        ]
                 ]
@@ -1114,7 +1114,7 @@ def main():
 **● ᴛᴇʟᴇᴛʜᴏɴ ᴠᴇʀsɪᴏɴ ➥** `{tlhver}`
 **● ᴩʏʀᴏɢʀᴀᴍ ᴠᴇʀsɪᴏɴ ➥** `{pyrover}`
 
-**❖ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ➥ [๛ᴀ ɴ ꜱ ʜ ɪ࿐](https://t.me/KINGxANAND)**
+**❖ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ➥ [๛PR࿐](https://t.me/OWNER_OF_PR)**
      ━━━━━━━━ ⊱◈◈◈⊰ ━━━━━━━━
 """,reply_markup=x,
                 parse_mode=ParseMode.MARKDOWN,
