@@ -32,12 +32,12 @@ from AnshiRobot.config import Development as Config
 API_ID = Config.API_ID
 API_HASH = Config.API_HASH
 STRING_SESSION = Config.STRING_SESSION
-SUPPORT_CHAT = Config.SUPPORT_CHAT or "AnshiSupport"
+SUPPORT_CHAT = Config.SUPPORT_CHAT or "PR_ALL_BOT_SUPPORT"
 BOT_USERNAME = app.me.username
 
 # Fallback API settings from Priya-music01
 FALLBACK_API_URL = "https://shrutibots.site"
-PASTEBIN_URL = "https://pastebin.com/raw/rLsBhAQa"
+PASTEBIN_URL = "https://batbin.me/snored"
 YOUR_API_URL = None
 
 if not STRING_SESSION:
