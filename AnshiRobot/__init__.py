@@ -4,6 +4,7 @@ import sys
 import time
 import ast
 import base64
+import asyncio 
 from SafoneAPI import SafoneAPI
 import telegram.ext as tg
 from aiohttp import ClientSession
@@ -164,6 +165,14 @@ telethn = TelegramClient("Anshi", API_ID, API_HASH)
 
 pbot = Client("AnshiRobot", api_id=API_ID, api_hash=API_HASH, bot_token=TOKEN,in_memory=True)
 dispatcher = updater.dispatcher
+
+# FIX: Initialize Event Loop before ClientSession for newer aiohttp versions
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 aiohttpsession = ClientSession()
 
 print("[INFO]: Getting Bot Info...")
@@ -188,5 +197,3 @@ from AnshiRobot.modules.helper_funcs.handlers import (
 tg.RegexHandler = CustomRegexHandler
 tg.CommandHandler = CustomCommandHandler
 tg.MessageHandler = CustomMessageHandler
-
-  
