@@ -185,7 +185,7 @@ async def download_track(videoid, is_video=False):
 
     if os.path.exists(file_path): return file_path
 
-    # Method 1: API
+    # Method 1: API (Primary)
     try:
         async with aiohttp.ClientSession() as session:
             params = {"url": videoid, "type": "video" if is_video else "audio"}
@@ -204,13 +204,17 @@ async def download_track(videoid, is_video=False):
     except Exception:
         pass
 
-    # Method 2: Local yt-dlp
+    # Method 2: Local yt-dlp (Bypass 'Sign in to confirm' fix)
     try:
         opts = {
             'format': 'best' if is_video else 'bestaudio',
             'outtmpl': file_path,
             'quiet': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
+            'nocheckcertificate': True,
+            'geo_bypass': True,
+            # CRITICAL FIX: Force Android Client to avoid Bot detection
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+            'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={videoid}"])
@@ -257,7 +261,7 @@ async def play_next(chat_id, client, message):
         file_path = await download_track(data["vidid"], is_video=(data["stream_type"] == "video"))
         
         if not file_path:
-            await client.send_message(chat_id, "🚫 Error downloading track, skipping...")
+            await client.send_message(chat_id, "🚫 **Error:** YouTube denied access. Try a different song or query.")
             queue.pop(0)
             return await play_next(chat_id, client, message)
 
@@ -329,7 +333,7 @@ async def play_handler(client, message: Message):
         pos = add_to_queue(message.chat.id, track_data)
         
         if pos == 1:
-            await msg.edit(f"📥 **Downloading:** `{title}`...")
+            await msg.edit(f"📥 **Processing:** `{title}`...")
             await play_next(message.chat.id, client, message)
             await msg.delete()
         else:
@@ -467,3 +471,12 @@ async def music_callbacks(client, query: CallbackQuery):
             try: await call_py.leave_group_call(chat_id)
             except: pass
             await query.message.edit_text("⏹️ **Queue Ended.**")
+
+# Start client
+if call_py:
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(call_py.start())
+        LOGGER.info("[Music] PyTgCalls Started Successfully.")
+    except RuntimeError:
+        pass
