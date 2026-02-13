@@ -58,29 +58,11 @@ else:
         userbot = None
         call_py = None
 
-# In-Memory Database for Queues
 QUEUES = {}
 
 # ====================================================================
-#  2. HELPER FUNCTIONS (Formatters, Time, Images)
+#  2. HELPER FUNCTIONS
 # ====================================================================
-
-def get_readable_time(seconds: int) -> str:
-    count = 0
-    time_list = []
-    time_suffix_list = ["s", "m", "h", "days"]
-    while count < 4:
-        count += 1
-        remainder, result = divmod(seconds, 60) if count < 3 else divmod(seconds, 24)
-        if seconds == 0 and remainder == 0: break
-        time_list.append(int(result))
-        seconds = int(remainder)
-    for i in range(len(time_list)):
-        time_list[i] = str(time_list[i]) + time_suffix_list[i]
-    if len(time_list) == 4:
-        return time_list.pop() + ", "
-    time_list.reverse()
-    return ":".join(time_list)
 
 def seconds_to_min(seconds):
     if seconds is not None:
@@ -91,10 +73,6 @@ def seconds_to_min(seconds):
         elif m > 0: return "{:02d}:{:02d}".format(m, s)
         elif s > 0: return "00:{:02d}".format(s)
     return "-"
-
-def time_to_seconds(time):
-    stringt = str(time)
-    return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
 
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
@@ -136,13 +114,11 @@ async def gen_thumb(videoid, title, channel, views, duration):
         draw = ImageDraw.Draw(background)
         
         try:
-            font_path = "AnshiRobot/resources/font.ttf" 
-            if not os.path.exists(font_path): font_path = "arial.ttf" # Fallback system font
-            arial = ImageFont.truetype(font_path, 30)
-            font = ImageFont.truetype(font_path, 45)
-        except:
+            # Use default system font if specific font is missing
             arial = ImageFont.load_default()
             font = ImageFont.load_default()
+        except:
+            pass
 
         draw.text((55, 560), f"{channel} | {views}", (255, 255, 255), font=arial)
         draw.text((57, 600), clear_title(title), (255, 255, 255), font=font)
@@ -156,11 +132,10 @@ async def gen_thumb(videoid, title, channel, views, duration):
         if os.path.exists(f"cache/thumb{videoid}.png"): os.remove(f"cache/thumb{videoid}.png")
         return f"cache/{videoid}.png"
     except Exception as e:
-        LOGGER.error(f"Thumbnail generation failed: {e}")
         return thumbnail_url
 
 # ====================================================================
-#  3. YOUTUBE API & DOWNLOADER (Core Logic)
+#  3. DOWNLOAD LOGIC (API + YT-DLP)
 # ====================================================================
 
 async def load_api_url():
@@ -185,11 +160,12 @@ async def download_track(videoid, is_video=False):
 
     if os.path.exists(file_path): return file_path
 
-    # Method 1: API (Primary)
+    # --- Method 1: API (Priya-Music) ---
+    LOGGER.info(f"Trying API download for {videoid}...")
     try:
         async with aiohttp.ClientSession() as session:
             params = {"url": videoid, "type": "video" if is_video else "audio"}
-            async with session.get(f"{YOUR_API_URL}/download", params=params, timeout=30) as resp:
+            async with session.get(f"{YOUR_API_URL}/download", params=params, timeout=20) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     token = data.get("download_token")
@@ -200,30 +176,46 @@ async def download_track(videoid, is_video=False):
                                 with open(file_path, "wb") as f:
                                     async for chunk in f_resp.content.iter_chunked(1024):
                                         f.write(chunk)
+                                LOGGER.info("API Download Success.")
                                 return file_path
-    except Exception:
-        pass
+                else:
+                    LOGGER.error(f"API returned status {resp.status}")
+    except Exception as e:
+        LOGGER.error(f"API Download Failed: {e}")
 
-    # Method 2: Local yt-dlp (Bypass 'Sign in to confirm' fix)
+    # --- Method 2: Local yt-dlp (Bypass Fix) ---
+    LOGGER.info("Switching to Local yt-dlp...")
     try:
+        # We use 'ios' client because 'web' and 'android' are often blocked on Heroku
         opts = {
             'format': 'best' if is_video else 'bestaudio',
             'outtmpl': file_path,
             'quiet': True,
             'nocheckcertificate': True,
             'geo_bypass': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-            'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+            'extractor_args': {'youtube': {'player_client': ['ios']}}, 
         }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={videoid}"])
-        return file_path
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).download([f"https://www.youtube.com/watch?v={videoid}"]))
+        if os.path.exists(file_path):
+            return file_path
     except Exception as e:
         LOGGER.error(f"Local Download Failed: {e}")
+    
+    return None
+
+async def get_direct_stream_url(videoid):
+    # Fallback to get a direct URL stream if download fails completely
+    try:
+        opts = {'format': 'bestaudio', 'quiet': True, 'extractor_args': {'youtube': {'player_client': ['ios']}}}
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(f"https://www.youtube.com/watch?v={videoid}", download=False))
+        return info.get('url')
+    except:
         return None
 
 # ====================================================================
-#  4. QUEUE & PLAYBACK CONTROL
+#  4. QUEUE & PLAYBACK
 # ====================================================================
 
 def add_to_queue(chat_id, track_dict):
@@ -238,33 +230,39 @@ def clear_queue_db(chat_id):
     if chat_id in QUEUES: QUEUES.pop(chat_id)
 
 async def start_call_if_not_active():
-    """Ensure PyTgCalls client is running"""
     if call_py:
-        try:
-            await call_py.start()
-        except:
-            pass
+        try: await call_py.start()
+        except: pass
 
 async def play_next(chat_id, client, message):
     queue = get_queue(chat_id)
     if not queue:
-        try:
-            return await call_py.leave_group_call(chat_id)
-        except:
-            return
+        try: return await call_py.leave_group_call(chat_id)
+        except: return
     
     data = queue[0]
     
     try:
         await start_call_if_not_active()
+        
+        # Try downloading file
         file_path = await download_track(data["vidid"], is_video=(data["stream_type"] == "video"))
         
-        if not file_path:
-            await client.send_message(chat_id, "🚫 **Error:** YouTube denied access. Try a different song or query.")
-            queue.pop(0)
-            return await play_next(chat_id, client, message)
+        stream = None
+        if file_path:
+            stream = MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
+        else:
+            # If download fails, try streaming URL directly
+            LOGGER.info("Attempting Direct Stream Fallback...")
+            stream_url = await get_direct_stream_url(data["vidid"])
+            if stream_url:
+                stream = MediaStream(stream_url, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
 
-        stream = MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
+        if not stream:
+             await client.send_message(chat_id, "🚫 **Error:** Failed to play track (Blocked by YouTube).")
+             queue.pop(0)
+             return await play_next(chat_id, client, message)
+
         await call_py.play(chat_id, stream)
         
         buttons = InlineKeyboardMarkup([
@@ -287,13 +285,13 @@ async def play_next(chat_id, client, message):
         await play_next(chat_id, client, message)
 
 # ====================================================================
-#  5. COMMAND HANDLERS
+#  5. COMMANDS
 # ====================================================================
 
 @app.on_message(filters.command(["play", "vplay"]))
 async def play_handler(client, message: Message):
     if not call_py:
-        return await message.reply_text("🚫 **Music Assistant is not active.** Check config `STRING_SESSION`.")
+        return await message.reply_text("🚫 **Music Module Disabled.** check logs.")
 
     if len(message.command) < 2:
         return await message.reply_text("💡 **Usage:** `/play <song>` or `/vplay <video>`")
@@ -301,10 +299,10 @@ async def play_handler(client, message: Message):
     msg = await message.reply_text("🔎 **Searching...**")
     query = message.text.split(None, 1)[1]
     is_video = message.command[0] == "vplay"
-    
     user_mention = message.from_user.mention if message.from_user else "Admin"
 
     try:
+        # Search
         info = await asyncio.get_event_loop().run_in_executor(None, lambda: VideosSearch(query, limit=1).result())
         if not info["result"]:
             return await msg.edit("❌ **No results found.**")
@@ -320,26 +318,22 @@ async def play_handler(client, message: Message):
         thumb_path = await gen_thumb(vidid, title, channel, views, duration)
 
         track_data = {
-            "title": title,
-            "link": link,
-            "vidid": vidid,
-            "user": user_mention,
-            "dur": duration,
-            "thumb": thumb_path,
+            "title": title, "link": link, "vidid": vidid,
+            "user": user_mention, "dur": duration, "thumb": thumb_path,
             "stream_type": "video" if is_video else "audio"
         }
 
         pos = add_to_queue(message.chat.id, track_data)
         
         if pos == 1:
-            await msg.edit(f"📥 **Downloading:** `{title}`...")
+            await msg.edit(f"📥 **Processing:** `{title}`...")
             await play_next(message.chat.id, client, message)
             await msg.delete()
         else:
             await msg.delete()
             await message.reply_photo(
                 photo=thumb_path,
-                caption=f"✅ **Added to Queue at #{pos}**\n🏷 **Title:** {title}\n⏱ **Duration:** {duration}",
+                caption=f"✅ **Added to Queue at #{pos}**\n🏷 **Title:** {title}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🗑 Close", callback_data="music_close")]])
             )
 
@@ -350,15 +344,12 @@ async def play_handler(client, message: Message):
 @app.on_message(filters.command(["stop", "end"]))
 async def stop_handler(client, message: Message):
     chat_id = message.chat.id
-    if chat_id in QUEUES:
-        clear_queue_db(chat_id)
-        try:
-            await start_call_if_not_active()
-            await call_py.leave_group_call(chat_id)
-            await message.reply_text("⏹️ **Playback Stopped & Queue Cleared.**")
-        except:
-            await message.reply_text("⚠️ **Nothing is playing.**")
-    else:
+    clear_queue_db(chat_id)
+    try:
+        await start_call_if_not_active()
+        await call_py.leave_group_call(chat_id)
+        await message.reply_text("⏹️ **Playback Stopped.**")
+    except:
         await message.reply_text("⚠️ **Nothing is playing.**")
 
 @app.on_message(filters.command(["skip", "next"]))
@@ -366,7 +357,7 @@ async def skip_handler(client, message: Message):
     chat_id = message.chat.id
     queue = get_queue(chat_id)
     if len(queue) > 0:
-        queue.pop(0) # Remove current song
+        queue.pop(0)
         if len(queue) > 0:
             await message.reply_text("⏭️ **Skipped.**")
             await play_next(chat_id, client, message)
@@ -398,37 +389,24 @@ async def queue_handler(client, message: Message):
     queue = get_queue(message.chat.id)
     if not queue:
         return await message.reply_text("📭 **Queue is empty.**")
-    
     text = "**📂 Music Queue:**\n\n"
     for i, track in enumerate(queue):
-        text += f"**{i+1}.** [{track['title']}]({track['link']}) - {track['user']}\n"
-    
+        text += f"**{i+1}.** [{track['title']}]({track['link']})\n"
     await message.reply_text(text, disable_web_page_preview=True)
 
 @app.on_message(filters.command("mstart"))
 async def music_start(client, message: Message):
-    await message.reply_text(
-        "🎵 **Anshi Music System Online!**\n\n"
-        "I can play music in high quality.\n"
-        "Make sure the **Assistant Account** is an Admin in this group."
-    )
+    await message.reply_text("🎵 **Anshi Music System Online!**")
 
 @app.on_message(filters.command("mhelp"))
 async def music_help(client, message: Message):
-    text = (
+    await message.reply_text(
         "🎧 **Music Commands:**\n\n"
-        "• `/play <song>` - Play Audio\n"
-        "• `/vplay <video>` - Play Video\n"
-        "• `/pause` - Pause playback\n"
-        "• `/resume` - Resume playback\n"
-        "• `/skip` - Skip current track\n"
-        "• `/stop` - Stop & Clear Queue\n"
-        "• `/queue` - Show list\n"
+        "• `/play <song>`\n• `/vplay <video>`\n• `/pause`\n• `/resume`\n• `/skip`\n• `/stop`\n• `/queue`"
     )
-    await message.reply_text(text)
 
 # ====================================================================
-#  6. CALLBACK HANDLERS
+#  6. CALLBACKS
 # ====================================================================
 
 @app.on_callback_query(filters.regex("music_"))
@@ -437,28 +415,24 @@ async def music_callbacks(client, query: CallbackQuery):
     chat_id = query.message.chat.id
     
     if data == "music_close":
-        await query.message.delete()
-        return
+        return await query.message.delete()
 
-    # Basic admin check
     try:
         user = await client.get_chat_member(chat_id, query.from_user.id)
         if user.status not in ["creator", "administrator"]:
-            return await query.answer("❌ You must be an admin.", show_alert=True)
+            return await query.answer("❌ Admins only.", show_alert=True)
     except:
-        return await query.answer("❌ Error checking perm.", show_alert=True)
+        return
 
     if data == "music_stop":
         clear_queue_db(chat_id)
         try: await call_py.leave_group_call(chat_id)
         except: pass
-        await query.message.edit_text("⏹️ **Stopped by Admin.**")
-    
+        await query.message.edit_text("⏹️ **Stopped.**")
     elif data == "music_pause":
         try: await call_py.pause_stream(chat_id)
         except: pass
         await query.answer("Paused")
-    
     elif data == "music_skip":
         queue = get_queue(chat_id)
         if len(queue) > 0: queue.pop(0)
