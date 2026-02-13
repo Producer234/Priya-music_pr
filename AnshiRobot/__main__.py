@@ -3,9 +3,9 @@ import importlib
 import re
 import time
 import asyncio
-import traceback  # Fixed: Added missing import
-import html       # Fixed: Added missing import
-import json       # Fixed: Added missing import
+import traceback
+import html
+import json
 from platform import python_version as y
 from sys import argv
 from pyrogram import __version__ as pyrover
@@ -29,6 +29,7 @@ from telegram.ext import (
 from telegram.ext.dispatcher import DispatcherHandlerStop
 from telegram.utils.helpers import escape_markdown
 from telethon import __version__ as tlhver
+from telethon.errors import FloodWaitError  # Added import
 
 import AnshiRobot.modules.no_sql.users_db as sql
 from AnshiRobot import (
@@ -1175,6 +1176,30 @@ def main():
 
 if __name__ == "__main__":
     LOGGER.info("Successfully loaded modules: " + str(ALL_MODULES))
-    telethn.start(bot_token=TOKEN)
+    try:
+        telethn.start(bot_token=TOKEN)
+    except Exception as e:
+        if "FloodWaitError" in str(e) or "A wait of" in str(e):
+            # Parse seconds if not available directly or just handle generic exception
+            import re
+            sec = re.search(r'wait of (\d+) seconds', str(e))
+            if sec:
+                wait_time = int(sec.group(1))
+                LOGGER.warning(f"FloodWait detected. Waiting for {wait_time} seconds...")
+                time.sleep(wait_time)
+                telethn.start(bot_token=TOKEN)
+            else:
+                 # Fallback if attribute available (Telethon usually has .seconds)
+                 try:
+                     LOGGER.warning(f"FloodWait detected. Waiting for {e.seconds} seconds...")
+                     time.sleep(e.seconds)
+                     telethn.start(bot_token=TOKEN)
+                 except:
+                     LOGGER.error(f"Telethon Start Error: {e}")
+                     exit(1)
+        else:
+             LOGGER.error(f"Telethon Start Error: {e}")
+             exit(1)
+
     pbot.start()
     main()
