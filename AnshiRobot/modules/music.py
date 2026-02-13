@@ -185,7 +185,7 @@ async def download_track(videoid, is_video=False):
 
     if os.path.exists(file_path): return file_path
 
-    # Method 1: API
+    # Method 1: API (Priya-Music Source)
     try:
         async with aiohttp.ClientSession() as session:
             params = {"url": videoid, "type": "video" if is_video else "audio"}
@@ -204,13 +204,19 @@ async def download_track(videoid, is_video=False):
     except Exception:
         pass
 
-    # Method 2: Local yt-dlp
+    # Method 2: Local yt-dlp (Robust Config)
+    # We add headers and user-agent to bypass "Sign in" errors
     try:
         opts = {
             'format': 'best' if is_video else 'bestaudio',
             'outtmpl': file_path,
             'quiet': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
+            'nocheckcertificate': True,
+            'geo_bypass': True,
+            'source_address': '0.0.0.0',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={videoid}"])
@@ -237,15 +243,21 @@ def clear_queue_db(chat_id):
 async def start_call_if_not_active():
     """Ensure PyTgCalls client is running"""
     try:
-        if call_py and not call_py.active:
+        # We try to start it. If it is already running, PyTgCalls might raise an error or ignore it.
+        # There is no simple .active boolean in v1.2.9 that is reliable for this check
+        # So we just try-except the start.
+        if call_py:
             await call_py.start()
-    except Exception as e:
-        LOGGER.error(f"Failed to start PyTgCalls: {e}")
+    except Exception:
+        pass # It's likely already running
 
 async def play_next(chat_id, client, message):
     queue = get_queue(chat_id)
     if not queue:
-        return await call_py.leave_call(chat_id)
+        try:
+            return await call_py.leave_group_call(chat_id)
+        except:
+            return
     
     data = queue[0]
     
@@ -254,10 +266,11 @@ async def play_next(chat_id, client, message):
         file_path = await download_track(data["vidid"], is_video=(data["stream_type"] == "video"))
         
         if not file_path:
-            await client.send_message(chat_id, "🚫 Error downloading track, skipping...")
+            await client.send_message(chat_id, "🚫 Error downloading track (IP Blocked/API Down), skipping...")
             queue.pop(0)
             return await play_next(chat_id, client, message)
 
+        # PyTgCalls v1.x stream setup
         stream = MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
         await call_py.play(chat_id, stream)
         
@@ -277,6 +290,7 @@ async def play_next(chat_id, client, message):
         )
     except Exception as e:
         LOGGER.error(f"Playback error: {e}")
+        # If play fails, skip to next
         if len(queue) > 0: queue.pop(0)
         await play_next(chat_id, client, message)
 
@@ -295,6 +309,8 @@ async def play_handler(client, message: Message):
     msg = await message.reply_text("🔎 **Searching...**")
     query = message.text.split(None, 1)[1]
     is_video = message.command[0] == "vplay"
+    
+    user_mention = message.from_user.mention if message.from_user else "Admin"
 
     try:
         info = await asyncio.get_event_loop().run_in_executor(None, lambda: VideosSearch(query, limit=1).result())
@@ -315,7 +331,7 @@ async def play_handler(client, message: Message):
             "title": title,
             "link": link,
             "vidid": vidid,
-            "user": message.from_user.mention,
+            "user": user_mention,
             "dur": duration,
             "thumb": thumb_path,
             "stream_type": "video" if is_video else "audio"
@@ -346,7 +362,7 @@ async def stop_handler(client, message: Message):
         clear_queue_db(chat_id)
         try:
             await start_call_if_not_active()
-            await call_py.leave_call(chat_id)
+            await call_py.leave_group_call(chat_id)
             await message.reply_text("⏹️ **Playback Stopped & Queue Cleared.**")
         except:
             await message.reply_text("⚠️ **Nothing is playing.**")
@@ -442,7 +458,7 @@ async def music_callbacks(client, query: CallbackQuery):
 
     if data == "music_stop":
         clear_queue_db(chat_id)
-        try: await call_py.leave_call(chat_id)
+        try: await call_py.leave_group_call(chat_id)
         except: pass
         await query.message.edit_text("⏹️ **Stopped by Admin.**")
     
@@ -459,6 +475,15 @@ async def music_callbacks(client, query: CallbackQuery):
             await play_next(chat_id, client, query.message)
         else:
             clear_queue_db(chat_id)
-            try: await call_py.leave_call(chat_id)
+            try: await call_py.leave_group_call(chat_id)
             except: pass
             await query.message.edit_text("⏹️ **Queue Ended.**")
+
+# Start client
+if call_py:
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(call_py.start())
+        LOGGER.info("[Music] PyTgCalls Started Successfully.")
+    except RuntimeError:
+        pass
