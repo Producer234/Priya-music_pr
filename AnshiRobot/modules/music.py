@@ -22,8 +22,7 @@ from youtubesearchpython import VideosSearch
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 # Import from AnshiRobot
-# We import BOT_USERNAME directly from __init__ instead of trying to get it from app.me
-from AnshiRobot import pbot as app, LOGGER, BOT_USERNAME
+from AnshiRobot import pbot as app, LOGGER
 from AnshiRobot.config import Development as Config
 
 # ====================================================================
@@ -235,6 +234,14 @@ def get_queue(chat_id):
 def clear_queue_db(chat_id):
     if chat_id in QUEUES: QUEUES.pop(chat_id)
 
+async def start_call_if_not_active():
+    """Ensure PyTgCalls client is running"""
+    try:
+        if call_py and not call_py.active:
+            await call_py.start()
+    except Exception as e:
+        LOGGER.error(f"Failed to start PyTgCalls: {e}")
+
 async def play_next(chat_id, client, message):
     queue = get_queue(chat_id)
     if not queue:
@@ -243,6 +250,7 @@ async def play_next(chat_id, client, message):
     data = queue[0]
     
     try:
+        await start_call_if_not_active()
         file_path = await download_track(data["vidid"], is_video=(data["stream_type"] == "video"))
         
         if not file_path:
@@ -337,6 +345,7 @@ async def stop_handler(client, message: Message):
     if chat_id in QUEUES:
         clear_queue_db(chat_id)
         try:
+            await start_call_if_not_active()
             await call_py.leave_call(chat_id)
             await message.reply_text("⏹️ **Playback Stopped & Queue Cleared.**")
         except:
@@ -349,7 +358,7 @@ async def skip_handler(client, message: Message):
     chat_id = message.chat.id
     queue = get_queue(chat_id)
     if len(queue) > 0:
-        queue.pop(0)
+        queue.pop(0) # Remove current song
         if len(queue) > 0:
             await message.reply_text("⏭️ **Skipped.**")
             await play_next(chat_id, client, message)
@@ -361,6 +370,7 @@ async def skip_handler(client, message: Message):
 @app.on_message(filters.command("pause"))
 async def pause_handler(client, message: Message):
     try:
+        await start_call_if_not_active()
         await call_py.pause_stream(message.chat.id)
         await message.reply_text("II **Paused.**")
     except:
@@ -369,6 +379,7 @@ async def pause_handler(client, message: Message):
 @app.on_message(filters.command("resume"))
 async def resume_handler(client, message: Message):
     try:
+        await start_call_if_not_active()
         await call_py.resume_stream(message.chat.id)
         await message.reply_text("▶️ **Resumed.**")
     except:
@@ -407,6 +418,10 @@ async def music_help(client, message: Message):
         "• `/queue` - Show list\n"
     )
     await message.reply_text(text)
+
+# ====================================================================
+#  6. CALLBACK HANDLERS
+# ====================================================================
 
 @app.on_callback_query(filters.regex("music_"))
 async def music_callbacks(client, query: CallbackQuery):
@@ -447,12 +462,3 @@ async def music_callbacks(client, query: CallbackQuery):
             try: await call_py.leave_call(chat_id)
             except: pass
             await query.message.edit_text("⏹️ **Queue Ended.**")
-
-# Start client
-if call_py:
-    try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(call_py.start())
-        LOGGER.info("[Music] PyTgCalls Started Successfully.")
-    except RuntimeError:
-        pass
