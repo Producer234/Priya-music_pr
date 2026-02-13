@@ -146,6 +146,8 @@ def changeImageSize(maxWidth, maxHeight, image):
     return image.resize((newWidth, newHeight))
 
 def clear_title(text):
+    if not text:
+        return "Unknown Title"
     list_words = text.split(" ")
     title = ""
     for i in list_words:
@@ -154,12 +156,12 @@ def clear_title(text):
     return title.strip()
 
 async def gen_thumb(videoid, title, channel, views, duration):
-    if os.path.isfile(f"cache/{videoid}.png"):
-        return f"cache/{videoid}.png"
-    
-    thumbnail_url = f"https://img.youtube.com/vi/{videoid}/maxresdefault.jpg"
-
     try:
+        if os.path.isfile(f"cache/{videoid}.png"):
+            return f"cache/{videoid}.png"
+        
+        thumbnail_url = f"https://img.youtube.com/vi/{videoid}/maxresdefault.jpg"
+
         async with aiohttp.ClientSession() as session:
             async with session.get(thumbnail_url) as resp:
                 if resp.status == 200:
@@ -167,6 +169,8 @@ async def gen_thumb(videoid, title, channel, views, duration):
                     f = await aiofiles.open(f"cache/thumb{videoid}.png", mode="wb")
                     await f.write(await resp.read())
                     await f.close()
+                else:
+                    return thumbnail_url
 
         youtube = Image.open(f"cache/thumb{videoid}.png")
         image1 = changeImageSize(1280, 720, youtube)
@@ -177,16 +181,24 @@ async def gen_thumb(videoid, title, channel, views, duration):
         
         draw = ImageDraw.Draw(background)
         
+        # Initialize fonts with fallback
         try:
+            arial = ImageFont.truetype("AnshiRobot/resources/fonts/arial.ttf", 30)
+            font = ImageFont.truetype("AnshiRobot/resources/fonts/arial.ttf", 40)
+        except:
             arial = ImageFont.load_default()
             font = ImageFont.load_default()
-        except:
-            pass
 
-        draw.text((55, 560), f"{channel} | {views}", (255, 255, 255), font=arial)
-        draw.text((57, 600), clear_title(title), (255, 255, 255), font=font)
+        # Handle None values for text
+        channel_text = str(channel) if channel else "Unknown Channel"
+        views_text = str(views) if views else "N/A"
+        duration_text = str(duration) if duration else "00:00"
+        title_text = clear_title(title)
+
+        draw.text((55, 560), f"{channel_text} | {views_text}", (255, 255, 255), font=arial)
+        draw.text((57, 600), title_text, (255, 255, 255), font=font)
         draw.text((36, 685), "00:00", (255, 255, 255), font=arial)
-        draw.text((1185, 685), f"{duration}", (255, 255, 255), font=arial)
+        draw.text((1185, 685), duration_text, (255, 255, 255), font=arial)
         
         draw.line([(55, 660), (1220, 660)], fill="white", width=5, joint="curve")
         draw.ellipse([(918, 648), (942, 672)], outline="white", fill="white", width=15)
@@ -195,7 +207,8 @@ async def gen_thumb(videoid, title, channel, views, duration):
         if os.path.exists(f"cache/thumb{videoid}.png"): os.remove(f"cache/thumb{videoid}.png")
         return f"cache/{videoid}.png"
     except Exception as e:
-        return thumbnail_url
+        LOGGER.error(f"Thumbnail Generation Error: {e}")
+        return f"https://img.youtube.com/vi/{videoid}/maxresdefault.jpg"
 
 # ====================================================================
 #  3. DOWNLOAD LOGIC
@@ -287,7 +300,7 @@ async def get_direct_stream_url(videoid):
         return None
 
 # ====================================================================
-#  4. QUEUE & PLAYBACK (FIXED)
+#  4. QUEUE & PLAYBACK
 # ====================================================================
 
 def add_to_queue(chat_id, track_dict):
@@ -388,7 +401,11 @@ async def play_handler(client, message: Message):
     if join_status != True:
         return await msg.edit(f"⚠️ **Assistant Error:** {join_status}\nMake me Admin or use `/userbotjoin`.")
 
-    query = message.text.split(None, 1)[1]
+    try:
+        query = message.text.split(None, 1)[1]
+    except IndexError:
+         return await msg.edit("⚠️ **Please provide a search query!**")
+
     is_video = message.command[0] == "vplay"
     user_mention = message.from_user.mention if message.from_user else "Admin"
 
@@ -399,12 +416,14 @@ async def play_handler(client, message: Message):
             return await msg.edit("❌ **No results found.**")
         
         res = info["result"][0]
-        title = res["title"]
-        vidid = res["id"]
-        duration = res["duration"]
-        link = res["link"]
-        channel = res["channel"]["name"]
-        views = res["viewCount"]["short"]
+        title = res.get("title", "Unknown Title")
+        vidid = res.get("id")
+        duration = res.get("duration", "00:00")
+        link = res.get("link", f"https://www.youtube.com/watch?v={vidid}")
+        
+        # Safely extract channel and views
+        channel = res.get("channel", {}).get("name", "Unknown Channel")
+        views = res.get("viewCount", {}).get("short", "N/A")
         
         thumb_path = await gen_thumb(vidid, title, channel, views, duration)
 
