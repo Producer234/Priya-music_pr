@@ -12,10 +12,10 @@ from typing import Union
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, CallbackQuery
-from pyrogram.errors import FloodWait, UserNotParticipant
+from pyrogram.errors import FloodWait, UserNotParticipant, ChatAdminRequired
 
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream
+from pytgcalls.types import MediaStream, AudioPiped, AudioVideoPiped
 
 import yt_dlp
 from youtubesearchpython import VideosSearch
@@ -38,6 +38,11 @@ SUPPORT_CHAT = Config.SUPPORT_CHAT or "PR_ALL_BOT_SUPPORT"
 FALLBACK_API_URL = "https://shrutibots.site"
 PASTEBIN_URL = "https://batbin.me/snored"
 YOUR_API_URL = None
+
+# Globals for Assistant Info
+ASSISTANT_ID = None
+ASSISTANT_NAME = None
+ASSISTANT_USERNAME = None
 
 # Create cookies.txt from ENV if available
 if "COOKIES" in os.environ:
@@ -63,12 +68,65 @@ else:
         userbot = None
         call_py = None
 
-# In-Memory Database
 QUEUES = {}
 
 # ====================================================================
 #  2. HELPER FUNCTIONS
 # ====================================================================
+
+async def get_assistant_details():
+    """Fetch Assistant ID/Name on startup"""
+    global ASSISTANT_ID, ASSISTANT_NAME, ASSISTANT_USERNAME
+    if userbot:
+        try:
+            if not userbot.is_connected:
+                await userbot.start()
+            me = await userbot.get_me()
+            ASSISTANT_ID = me.id
+            ASSISTANT_NAME = me.first_name
+            ASSISTANT_USERNAME = me.username
+            LOGGER.info(f"Assistant Started: {ASSISTANT_NAME} (ID: {ASSISTANT_ID})")
+        except Exception as e:
+            LOGGER.error(f"Failed to fetch Assistant Details: {e}")
+
+async def ensure_assistant_joined(chat_id):
+    """
+    Checks if assistant is in chat.
+    If not, Bot invites Assistant OR generates link for Assistant to join.
+    """
+    if not userbot:
+        return "Assistant client not initialized."
+        
+    try:
+        # Check if already a member
+        await userbot.get_chat_member(chat_id, "me")
+        return True
+    except UserNotParticipant:
+        # Not a member, try to join
+        pass
+    except Exception:
+        pass
+
+    # Method 1: Bot invites Assistant (Needs Ban User Permission usually)
+    if ASSISTANT_ID:
+        try:
+            await app.add_chat_members(chat_id, ASSISTANT_ID)
+            return True
+        except:
+            pass
+    
+    # Method 2: Generate Invite Link and Join
+    try:
+        invite_link = await app.export_chat_invite_link(chat_id)
+        if "+" in invite_link:
+            await userbot.join_chat(invite_link)
+            return True
+    except ChatAdminRequired:
+        return "I need **'Invite Users via Link'** permission to invite the assistant."
+    except Exception as e:
+        return f"Assistant failed to join: {e}"
+
+    return "Could not add assistant. Manually add them."
 
 def seconds_to_min(seconds):
     if seconds is not None:
@@ -79,10 +137,6 @@ def seconds_to_min(seconds):
         elif m > 0: return "{:02d}:{:02d}".format(m, s)
         elif s > 0: return "00:{:02d}".format(s)
     return "-"
-
-def time_to_seconds(time):
-    stringt = str(time)
-    return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
 
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
@@ -122,6 +176,7 @@ async def gen_thumb(videoid, title, channel, views, duration):
         background = enhancer.enhance(0.5)
         
         draw = ImageDraw.Draw(background)
+        
         try:
             arial = ImageFont.load_default()
             font = ImageFont.load_default()
@@ -173,7 +228,6 @@ async def download_track(videoid, is_video=False):
     if os.path.exists(file_path): return file_path
 
     # --- Method 1: API ---
-    # We skip API logic if it returned HTML junk previously
     if YOUR_API_URL and "shrutibots" in YOUR_API_URL: 
         try:
             async with aiohttp.ClientSession() as session:
@@ -190,7 +244,7 @@ async def download_track(videoid, is_video=False):
                                         async for chunk in f_resp.content.iter_chunked(1024):
                                             f.write(chunk)
                                     return file_path
-        except Exception as e:
+        except Exception:
             pass
 
     # --- Method 2: Local yt-dlp with COOKIES ---
@@ -204,9 +258,7 @@ async def download_track(videoid, is_video=False):
             'nocheckcertificate': True,
             'geo_bypass': True,
             'cookiefile': cookie_file,
-            # Trying Android client which is sometimes less strict
             'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-            'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
         }
         
         loop = asyncio.get_event_loop()
@@ -235,7 +287,7 @@ async def get_direct_stream_url(videoid):
         return None
 
 # ====================================================================
-#  4. QUEUE & PLAYBACK
+#  4. QUEUE & PLAYBACK (FIXED)
 # ====================================================================
 
 def add_to_queue(chat_id, track_dict):
@@ -265,17 +317,31 @@ async def play_next(chat_id, client, message):
     try:
         await start_call_if_not_active()
         
+        # Ensure Assistant is in Group
+        joined = await ensure_assistant_joined(chat_id)
+        if joined != True:
+            await client.send_message(chat_id, f"⚠️ {joined}")
+            clear_queue_db(chat_id)
+            return
+
         # Try downloading file
-        file_path = await download_track(data["vidid"], is_video=(data["stream_type"] == "video"))
+        is_vid = (data["stream_type"] == "video")
+        file_path = await download_track(data["vidid"], is_video=is_vid)
         
         stream = None
         if file_path:
-            stream = MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
+            if is_vid:
+                stream = AudioVideoPiped(file_path)
+            else:
+                stream = AudioPiped(file_path)
         else:
             # Fallback to direct URL
             stream_url = await get_direct_stream_url(data["vidid"])
             if stream_url:
-                stream = MediaStream(stream_url, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
+                if is_vid:
+                     stream = AudioVideoPiped(stream_url)
+                else:
+                     stream = AudioPiped(stream_url)
 
         if not stream:
              await client.send_message(chat_id, "🚫 **Error:** Failed to play track. YouTube blocked the IP. Please add `COOKIES` to Env.")
@@ -304,23 +370,30 @@ async def play_next(chat_id, client, message):
         await play_next(chat_id, client, message)
 
 # ====================================================================
-#  5. COMMANDS
+#  5. COMMAND HANDLERS
 # ====================================================================
 
 @app.on_message(filters.command(["play", "vplay"]))
 async def play_handler(client, message: Message):
     if not call_py:
-        return await message.reply_text("🚫 **Music Module Disabled.** check logs.")
+        return await message.reply_text("🚫 **Music Assistant is not active.** Check config `STRING_SESSION`.")
 
     if len(message.command) < 2:
         return await message.reply_text("💡 **Usage:** `/play <song>` or `/vplay <video>`")
 
     msg = await message.reply_text("🔎 **Searching...**")
+    
+    # 1. Join Assistant First
+    join_status = await ensure_assistant_joined(message.chat.id)
+    if join_status != True:
+        return await msg.edit(f"⚠️ **Assistant Error:** {join_status}\nMake me Admin or use `/userbotjoin`.")
+
     query = message.text.split(None, 1)[1]
     is_video = message.command[0] == "vplay"
     user_mention = message.from_user.mention if message.from_user else "Admin"
 
     try:
+        # Search
         info = await asyncio.get_event_loop().run_in_executor(None, lambda: VideosSearch(query, limit=1).result())
         if not info["result"]:
             return await msg.edit("❌ **No results found.**")
@@ -359,15 +432,27 @@ async def play_handler(client, message: Message):
         LOGGER.error(f"Play Error: {e}")
         await msg.edit(f"❌ **Error:** {e}")
 
+@app.on_message(filters.command(["userbotjoin", "joinassistant"]))
+async def join_assistant_handler(client, message: Message):
+    msg = await message.reply_text("⚙️ **Assistant Joining...**")
+    res = await ensure_assistant_joined(message.chat.id)
+    if res == True:
+        await msg.edit(f"✅ **Assistant Joined Successfully**\nAccount: {ASSISTANT_NAME}")
+    else:
+        await msg.edit(f"❌ **Failed:** {res}")
+
 @app.on_message(filters.command(["stop", "end"]))
 async def stop_handler(client, message: Message):
     chat_id = message.chat.id
-    clear_queue_db(chat_id)
-    try:
-        await start_call_if_not_active()
-        await call_py.leave_group_call(chat_id)
-        await message.reply_text("⏹️ **Playback Stopped.**")
-    except:
+    if chat_id in QUEUES:
+        clear_queue_db(chat_id)
+        try:
+            await start_call_if_not_active()
+            await call_py.leave_group_call(chat_id)
+            await message.reply_text("⏹️ **Playback Stopped & Queue Cleared.**")
+        except:
+            await message.reply_text("⚠️ **Nothing is playing.**")
+    else:
         await message.reply_text("⚠️ **Nothing is playing.**")
 
 @app.on_message(filters.command(["skip", "next"]))
@@ -420,7 +505,7 @@ async def music_start(client, message: Message):
 async def music_help(client, message: Message):
     await message.reply_text(
         "🎧 **Music Commands:**\n\n"
-        "• `/play <song>`\n• `/vplay <video>`\n• `/pause`\n• `/resume`\n• `/skip`\n• `/stop`\n• `/queue`"
+        "• `/play <song>`\n• `/vplay <video>`\n• `/pause`\n• `/resume`\n• `/skip`\n• `/stop`\n• `/queue`\n• `/userbotjoin`"
     )
 
 # ====================================================================
@@ -462,3 +547,14 @@ async def music_callbacks(client, query: CallbackQuery):
             try: await call_py.leave_group_call(chat_id)
             except: pass
             await query.message.edit_text("⏹️ **Queue Ended.**")
+
+# ====================================================================
+#  7. INITIALIZATION (ASYNC)
+# ====================================================================
+
+if call_py:
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(get_assistant_details())
+    except RuntimeError:
+        pass
