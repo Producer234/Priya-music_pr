@@ -22,7 +22,8 @@ from youtubesearchpython import VideosSearch
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 # Import from AnshiRobot
-from AnshiRobot import pbot as app, LOGGER
+# We import BOT_USERNAME directly from __init__ instead of trying to get it from app.me
+from AnshiRobot import pbot as app, LOGGER, BOT_USERNAME
 from AnshiRobot.config import Development as Config
 
 # ====================================================================
@@ -33,9 +34,8 @@ API_ID = Config.API_ID
 API_HASH = Config.API_HASH
 STRING_SESSION = Config.STRING_SESSION
 SUPPORT_CHAT = Config.SUPPORT_CHAT or "PR_ALL_BOT_SUPPORT"
-BOT_USERNAME = app.me.username
 
-# Fallback API settings from Priya-music01
+# Fallback API settings
 FALLBACK_API_URL = "https://shrutibots.site"
 PASTEBIN_URL = "https://batbin.me/snored"
 YOUR_API_URL = None
@@ -60,7 +60,6 @@ else:
         call_py = None
 
 # In-Memory Database for Queues
-# Structure: { chat_id: [ { "title":Str, "link":Str, "vidid":Str, "user":Str, "dur":Str, "thumb":Str, "stream_type": "audio"|"video" } ] }
 QUEUES = {}
 
 # ====================================================================
@@ -98,7 +97,6 @@ def time_to_seconds(time):
     stringt = str(time)
     return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
 
-# --- Thumbnail Logic (Adapted from Priya-music01/utils/thumbnails.py) ---
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
     heightRatio = maxHeight / image.size[1]
@@ -115,13 +113,9 @@ def clear_title(text):
     return title.strip()
 
 async def gen_thumb(videoid, title, channel, views, duration):
-    # This function generates a styled thumbnail
-    # Requires 'AnshiRobot/resources/font.ttf' or similar. We will use default if fail.
-    
     if os.path.isfile(f"cache/{videoid}.png"):
         return f"cache/{videoid}.png"
     
-    url = f"https://www.youtube.com/watch?v={videoid}"
     thumbnail_url = f"https://img.youtube.com/vi/{videoid}/maxresdefault.jpg"
 
     try:
@@ -142,23 +136,20 @@ async def gen_thumb(videoid, title, channel, views, duration):
         
         draw = ImageDraw.Draw(background)
         
-        # Try finding a font, else use default
         try:
-            font_path = "AnshiRobot/resources/font.ttf" # Ensure this exists or change path
-            if not os.path.exists(font_path): font_path = "arial.ttf"
+            font_path = "AnshiRobot/resources/font.ttf" 
+            if not os.path.exists(font_path): font_path = "arial.ttf" # Fallback system font
             arial = ImageFont.truetype(font_path, 30)
             font = ImageFont.truetype(font_path, 45)
         except:
             arial = ImageFont.load_default()
             font = ImageFont.load_default()
 
-        # Drawing text (Positions approximate based on Priya-Music)
         draw.text((55, 560), f"{channel} | {views}", (255, 255, 255), font=arial)
         draw.text((57, 600), clear_title(title), (255, 255, 255), font=font)
         draw.text((36, 685), "00:00", (255, 255, 255), font=arial)
         draw.text((1185, 685), f"{duration}", (255, 255, 255), font=arial)
         
-        # Line
         draw.line([(55, 660), (1220, 660)], fill="white", width=5, joint="curve")
         draw.ellipse([(918, 648), (942, 672)], outline="white", fill="white", width=15)
 
@@ -185,22 +176,7 @@ async def load_api_url():
     except:
         YOUR_API_URL = FALLBACK_API_URL
 
-async def search_youtube(query):
-    # Uses yt-dlp to extract info
-    opts = {'format': 'best', 'quiet': True, 'noplaylist': True}
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            if "https://" in query:
-                info = ydl.extract_info(query, download=False)
-            else:
-                info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
-        return info
-    except Exception as e:
-        LOGGER.error(f"YT Search Error: {e}")
-        return None
-
 async def download_track(videoid, is_video=False):
-    # Logic from Priya-Music's Youtube.py (API fallback)
     global YOUR_API_URL
     if not YOUR_API_URL: await load_api_url()
 
@@ -210,7 +186,7 @@ async def download_track(videoid, is_video=False):
 
     if os.path.exists(file_path): return file_path
 
-    # Method 1: Try External API
+    # Method 1: API
     try:
         async with aiohttp.ClientSession() as session:
             params = {"url": videoid, "type": "video" if is_video else "audio"}
@@ -226,15 +202,16 @@ async def download_track(videoid, is_video=False):
                                     async for chunk in f_resp.content.iter_chunked(1024):
                                         f.write(chunk)
                                 return file_path
-    except Exception as e:
-        LOGGER.warning(f"API Download failed, trying local: {e}")
+    except Exception:
+        pass
 
-    # Method 2: Local yt-dlp fallback
+    # Method 2: Local yt-dlp
     try:
         opts = {
             'format': 'best' if is_video else 'bestaudio',
             'outtmpl': file_path,
             'quiet': True,
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={videoid}"])
@@ -244,12 +221,11 @@ async def download_track(videoid, is_video=False):
         return None
 
 # ====================================================================
-#  4. QUEUE MANAGEMENT
+#  4. QUEUE & PLAYBACK CONTROL
 # ====================================================================
 
 def add_to_queue(chat_id, track_dict):
-    if chat_id not in QUEUES:
-        QUEUES[chat_id] = []
+    if chat_id not in QUEUES: QUEUES[chat_id] = []
     QUEUES[chat_id].append(track_dict)
     return len(QUEUES[chat_id])
 
@@ -257,19 +233,13 @@ def get_queue(chat_id):
     return QUEUES.get(chat_id, [])
 
 def clear_queue_db(chat_id):
-    if chat_id in QUEUES:
-        QUEUES.pop(chat_id)
-
-# ====================================================================
-#  5. PLAYBACK CONTROL
-# ====================================================================
+    if chat_id in QUEUES: QUEUES.pop(chat_id)
 
 async def play_next(chat_id, client, message):
     queue = get_queue(chat_id)
     if not queue:
         return await call_py.leave_call(chat_id)
     
-    # Get next song (index 0 is current)
     data = queue[0]
     
     try:
@@ -283,7 +253,6 @@ async def play_next(chat_id, client, message):
         stream = MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
         await call_py.play(chat_id, stream)
         
-        # Send Playing Message
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("⏸ Pause", callback_data="music_pause"),
              InlineKeyboardButton("⏹ Stop", callback_data="music_stop"),
@@ -300,11 +269,11 @@ async def play_next(chat_id, client, message):
         )
     except Exception as e:
         LOGGER.error(f"Playback error: {e}")
-        queue.pop(0)
+        if len(queue) > 0: queue.pop(0)
         await play_next(chat_id, client, message)
 
 # ====================================================================
-#  6. COMMAND HANDLERS
+#  5. COMMAND HANDLERS
 # ====================================================================
 
 @app.on_message(filters.command(["play", "vplay"]))
@@ -320,7 +289,6 @@ async def play_handler(client, message: Message):
     is_video = message.command[0] == "vplay"
 
     try:
-        # Search info
         info = await asyncio.get_event_loop().run_in_executor(None, lambda: VideosSearch(query, limit=1).result())
         if not info["result"]:
             return await msg.edit("❌ **No results found.**")
@@ -333,10 +301,8 @@ async def play_handler(client, message: Message):
         channel = res["channel"]["name"]
         views = res["viewCount"]["short"]
         
-        # Generate Thumbnail
         thumb_path = await gen_thumb(vidid, title, channel, views, duration)
 
-        # Prepare Data
         track_data = {
             "title": title,
             "link": link,
@@ -347,7 +313,6 @@ async def play_handler(client, message: Message):
             "stream_type": "video" if is_video else "audio"
         }
 
-        # Add to Queue
         pos = add_to_queue(message.chat.id, track_data)
         
         if pos == 1:
@@ -384,7 +349,7 @@ async def skip_handler(client, message: Message):
     chat_id = message.chat.id
     queue = get_queue(chat_id)
     if len(queue) > 0:
-        queue.pop(0) # Remove current song
+        queue.pop(0)
         if len(queue) > 0:
             await message.reply_text("⏭️ **Skipped.**")
             await play_next(chat_id, client, message)
@@ -421,7 +386,6 @@ async def queue_handler(client, message: Message):
     
     await message.reply_text(text, disable_web_page_preview=True)
 
-# Renamed Commands from Priya-music01
 @app.on_message(filters.command("mstart"))
 async def music_start(client, message: Message):
     await message.reply_text(
@@ -444,10 +408,6 @@ async def music_help(client, message: Message):
     )
     await message.reply_text(text)
 
-# ====================================================================
-#  7. CALLBACK HANDLERS
-# ====================================================================
-
 @app.on_callback_query(filters.regex("music_"))
 async def music_callbacks(client, query: CallbackQuery):
     data = query.data
@@ -457,10 +417,13 @@ async def music_callbacks(client, query: CallbackQuery):
         await query.message.delete()
         return
 
-    # Check Admin permission (Basic check)
-    user = await client.get_chat_member(chat_id, query.from_user.id)
-    if user.status not in ["creator", "administrator"]:
-        return await query.answer("❌ You must be an admin.", show_alert=True)
+    # Basic admin check
+    try:
+        user = await client.get_chat_member(chat_id, query.from_user.id)
+        if user.status not in ["creator", "administrator"]:
+            return await query.answer("❌ You must be an admin.", show_alert=True)
+    except:
+        return await query.answer("❌ Error checking perm.", show_alert=True)
 
     if data == "music_stop":
         clear_queue_db(chat_id)
@@ -485,13 +448,9 @@ async def music_callbacks(client, query: CallbackQuery):
             except: pass
             await query.message.edit_text("⏹️ **Queue Ended.**")
 
-# ====================================================================
-#  8. STARTUP LOGIC
-# ====================================================================
-
+# Start client
 if call_py:
     try:
-        # Start PyTgCalls client
         loop = asyncio.get_event_loop()
         loop.create_task(call_py.start())
         LOGGER.info("[Music] PyTgCalls Started Successfully.")
