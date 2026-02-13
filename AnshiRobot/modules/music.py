@@ -39,6 +39,11 @@ FALLBACK_API_URL = "https://shrutibots.site"
 PASTEBIN_URL = "https://batbin.me/snored"
 YOUR_API_URL = None
 
+# Create cookies.txt from ENV if available
+if "COOKIES" in os.environ:
+    with open("cookies.txt", "w") as f:
+        f.write(os.environ["COOKIES"])
+
 if not STRING_SESSION:
     LOGGER.error("STRING_SESSION not found! Music module disabled.")
     userbot = None
@@ -58,6 +63,7 @@ else:
         userbot = None
         call_py = None
 
+# In-Memory Database
 QUEUES = {}
 
 # ====================================================================
@@ -73,6 +79,10 @@ def seconds_to_min(seconds):
         elif m > 0: return "{:02d}:{:02d}".format(m, s)
         elif s > 0: return "00:{:02d}".format(s)
     return "-"
+
+def time_to_seconds(time):
+    stringt = str(time)
+    return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
 
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
@@ -112,9 +122,7 @@ async def gen_thumb(videoid, title, channel, views, duration):
         background = enhancer.enhance(0.5)
         
         draw = ImageDraw.Draw(background)
-        
         try:
-            # Use default system font if specific font is missing
             arial = ImageFont.load_default()
             font = ImageFont.load_default()
         except:
@@ -135,7 +143,7 @@ async def gen_thumb(videoid, title, channel, views, duration):
         return thumbnail_url
 
 # ====================================================================
-#  3. DOWNLOAD LOGIC (API + YT-DLP)
+#  3. DOWNLOAD LOGIC
 # ====================================================================
 
 async def load_api_url():
@@ -144,7 +152,11 @@ async def load_api_url():
         async with aiohttp.ClientSession() as session:
             async with session.get(PASTEBIN_URL) as response:
                 if response.status == 200:
-                    YOUR_API_URL = (await response.text()).strip()
+                    text = await response.text()
+                    if "http" in text and "<" not in text:
+                        YOUR_API_URL = text.strip()
+                    else:
+                        YOUR_API_URL = FALLBACK_API_URL
                 else:
                     YOUR_API_URL = FALLBACK_API_URL
     except:
@@ -160,43 +172,46 @@ async def download_track(videoid, is_video=False):
 
     if os.path.exists(file_path): return file_path
 
-    # --- Method 1: API (Priya-Music) ---
-    LOGGER.info(f"Trying API download for {videoid}...")
-    try:
-        async with aiohttp.ClientSession() as session:
-            params = {"url": videoid, "type": "video" if is_video else "audio"}
-            async with session.get(f"{YOUR_API_URL}/download", params=params, timeout=20) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    token = data.get("download_token")
-                    if token:
-                        stream_url = f"{YOUR_API_URL}/stream/{videoid}?type={params['type']}"
-                        async with session.get(stream_url, headers={"X-Download-Token": token}) as f_resp:
-                            if f_resp.status == 200:
-                                with open(file_path, "wb") as f:
-                                    async for chunk in f_resp.content.iter_chunked(1024):
-                                        f.write(chunk)
-                                LOGGER.info("API Download Success.")
-                                return file_path
-                else:
-                    LOGGER.error(f"API returned status {resp.status}")
-    except Exception as e:
-        LOGGER.error(f"API Download Failed: {e}")
+    # --- Method 1: API ---
+    # We skip API logic if it returned HTML junk previously
+    if YOUR_API_URL and "shrutibots" in YOUR_API_URL: 
+        try:
+            async with aiohttp.ClientSession() as session:
+                params = {"url": videoid, "type": "video" if is_video else "audio"}
+                async with session.get(f"{YOUR_API_URL}/download", params=params, timeout=20) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        token = data.get("download_token")
+                        if token:
+                            stream_url = f"{YOUR_API_URL}/stream/{videoid}?type={params['type']}"
+                            async with session.get(stream_url, headers={"X-Download-Token": token}) as f_resp:
+                                if f_resp.status == 200:
+                                    with open(file_path, "wb") as f:
+                                        async for chunk in f_resp.content.iter_chunked(1024):
+                                            f.write(chunk)
+                                    return file_path
+        except Exception as e:
+            pass
 
-    # --- Method 2: Local yt-dlp (Bypass Fix) ---
-    LOGGER.info("Switching to Local yt-dlp...")
+    # --- Method 2: Local yt-dlp with COOKIES ---
     try:
-        # We use 'ios' client because 'web' and 'android' are often blocked on Heroku
+        cookie_file = "cookies.txt" if os.path.exists("cookies.txt") else None
+        
         opts = {
             'format': 'best' if is_video else 'bestaudio',
             'outtmpl': file_path,
             'quiet': True,
             'nocheckcertificate': True,
             'geo_bypass': True,
-            'extractor_args': {'youtube': {'player_client': ['ios']}}, 
+            'cookiefile': cookie_file,
+            # Trying Android client which is sometimes less strict
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+            'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
         }
+        
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).download([f"https://www.youtube.com/watch?v={videoid}"]))
+        
         if os.path.exists(file_path):
             return file_path
     except Exception as e:
@@ -205,9 +220,14 @@ async def download_track(videoid, is_video=False):
     return None
 
 async def get_direct_stream_url(videoid):
-    # Fallback to get a direct URL stream if download fails completely
     try:
-        opts = {'format': 'bestaudio', 'quiet': True, 'extractor_args': {'youtube': {'player_client': ['ios']}}}
+        cookie_file = "cookies.txt" if os.path.exists("cookies.txt") else None
+        opts = {
+            'format': 'bestaudio', 
+            'quiet': True, 
+            'cookiefile': cookie_file,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+        }
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(f"https://www.youtube.com/watch?v={videoid}", download=False))
         return info.get('url')
@@ -252,14 +272,13 @@ async def play_next(chat_id, client, message):
         if file_path:
             stream = MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
         else:
-            # If download fails, try streaming URL directly
-            LOGGER.info("Attempting Direct Stream Fallback...")
+            # Fallback to direct URL
             stream_url = await get_direct_stream_url(data["vidid"])
             if stream_url:
                 stream = MediaStream(stream_url, video_flags=MediaStream.Flags.IGNORE if data["stream_type"] == "audio" else None)
 
         if not stream:
-             await client.send_message(chat_id, "🚫 **Error:** Failed to play track (Blocked by YouTube).")
+             await client.send_message(chat_id, "🚫 **Error:** Failed to play track. YouTube blocked the IP. Please add `COOKIES` to Env.")
              queue.pop(0)
              return await play_next(chat_id, client, message)
 
@@ -302,7 +321,6 @@ async def play_handler(client, message: Message):
     user_mention = message.from_user.mention if message.from_user else "Admin"
 
     try:
-        # Search
         info = await asyncio.get_event_loop().run_in_executor(None, lambda: VideosSearch(query, limit=1).result())
         if not info["result"]:
             return await msg.edit("❌ **No results found.**")
