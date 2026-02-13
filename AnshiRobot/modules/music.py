@@ -130,12 +130,15 @@ async def ensure_assistant_joined(chat_id):
 
 def seconds_to_min(seconds):
     if seconds is not None:
-        seconds = int(seconds)
-        d, h, m, s = seconds // (3600 * 24), seconds // 3600 % 24, seconds % 3600 // 60, seconds % 3600 % 60
-        if d > 0: return "{:02d}:{:02d}:{:02d}:{:02d}".format(d, h, m, s)
-        elif h > 0: return "{:02d}:{:02d}:{:02d}".format(h, m, s)
-        elif m > 0: return "{:02d}:{:02d}".format(m, s)
-        elif s > 0: return "00:{:02d}".format(s)
+        try:
+            seconds = int(seconds)
+            d, h, m, s = seconds // (3600 * 24), seconds // 3600 % 24, seconds % 3600 // 60, seconds % 3600 % 60
+            if d > 0: return "{:02d}:{:02d}:{:02d}:{:02d}".format(d, h, m, s)
+            elif h > 0: return "{:02d}:{:02d}:{:02d}".format(h, m, s)
+            elif m > 0: return "{:02d}:{:02d}".format(m, s)
+            elif s > 0: return "00:{:02d}".format(s)
+        except:
+            return "-"
     return "-"
 
 def changeImageSize(maxWidth, maxHeight, image):
@@ -148,12 +151,15 @@ def changeImageSize(maxWidth, maxHeight, image):
 def clear_title(text):
     if not text:
         return "Unknown Title"
-    list_words = text.split(" ")
-    title = ""
-    for i in list_words:
-        if len(title) + len(i) < 60:
-            title += " " + i
-    return title.strip()
+    try:
+        list_words = text.split(" ")
+        title = ""
+        for i in list_words:
+            if len(title) + len(i) < 60:
+                title += " " + i
+        return title.strip()
+    except:
+        return "Unknown Title"
 
 async def gen_thumb(videoid, title, channel, views, duration):
     try:
@@ -416,14 +422,20 @@ async def play_handler(client, message: Message):
             return await msg.edit("❌ **No results found.**")
         
         res = info["result"][0]
+        # Robust extraction
         title = res.get("title", "Unknown Title")
         vidid = res.get("id")
         duration = res.get("duration", "00:00")
         link = res.get("link", f"https://www.youtube.com/watch?v={vidid}")
         
-        # Safely extract channel and views
-        channel = res.get("channel", {}).get("name", "Unknown Channel")
-        views = res.get("viewCount", {}).get("short", "N/A")
+        # Safely extract channel and views, ensuring strings
+        channel = "Unknown Channel"
+        if "channel" in res and res["channel"] and "name" in res["channel"]:
+            channel = str(res["channel"]["name"])
+            
+        views = "N/A"
+        if "viewCount" in res and res["viewCount"] and "short" in res["viewCount"]:
+            views = str(res["viewCount"]["short"])
         
         thumb_path = await gen_thumb(vidid, title, channel, views, duration)
 
@@ -449,7 +461,7 @@ async def play_handler(client, message: Message):
 
     except Exception as e:
         LOGGER.error(f"Play Error: {e}")
-        await msg.edit(f"❌ **Error:** {e}")
+        await msg.edit(f"❌ **Error:** {str(e)}")
 
 @app.on_message(filters.command(["userbotjoin", "joinassistant"]))
 async def join_assistant_handler(client, message: Message):
