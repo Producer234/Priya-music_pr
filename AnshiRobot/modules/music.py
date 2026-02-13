@@ -212,7 +212,6 @@ async def download_track(videoid, is_video=False):
             'quiet': True,
             'nocheckcertificate': True,
             'geo_bypass': True,
-            # CRITICAL FIX: Force Android Client to avoid Bot detection
             'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
             'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
         }
@@ -333,7 +332,7 @@ async def play_handler(client, message: Message):
         pos = add_to_queue(message.chat.id, track_data)
         
         if pos == 1:
-            await msg.edit(f"📥 **Processing:** `{title}`...")
+            await msg.edit(f"📥 **Downloading:** `{title}`...")
             await play_next(message.chat.id, client, message)
             await msg.delete()
         else:
@@ -471,12 +470,3 @@ async def music_callbacks(client, query: CallbackQuery):
             try: await call_py.leave_group_call(chat_id)
             except: pass
             await query.message.edit_text("⏹️ **Queue Ended.**")
-
-# Start client
-if call_py:
-    try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(call_py.start())
-        LOGGER.info("[Music] PyTgCalls Started Successfully.")
-    except RuntimeError:
-        pass
