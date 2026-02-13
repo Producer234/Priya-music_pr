@@ -367,7 +367,20 @@ async def play_next(chat_id, client, message):
              queue.pop(0)
              return await play_next(chat_id, client, message)
 
-        await call_py.play(chat_id, stream)
+        # PyTgCalls v1.x wrapper
+        # play() does not exist in v1.x, we must check activity
+        try:
+            # call_py.active_calls is a list of Call objects in v1.x
+            # We check if chat_id exists in any of them
+            is_active = any(call.chat_id == chat_id for call in call_py.active_calls)
+            
+            if is_active:
+                await call_py.change_stream(chat_id, stream)
+            else:
+                await call_py.join_group_call(chat_id, stream)
+        except Exception as e:
+            LOGGER.error(f"PyTgCalls 1.x Error: {e}")
+            raise e
         
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("⏸ Pause", callback_data="music_pause"),
