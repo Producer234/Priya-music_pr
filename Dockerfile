@@ -64,7 +64,7 @@ RUN apt update && apt upgrade -y && \
 # Pypi package Repo upgrade
 RUN pip3 install --upgrade pip setuptools
 
-RUN git clone https://github.com/BadshahAk/AnshiRobot /root/AnshiRobot
+RUN git clone https://github.com/Producer234/Priya-music_pr /root/AnshiRobot
 WORKDIR /root/AnshiRobot
 
 #Copy config file to /root/AnshiRobot/AnshiRobot
