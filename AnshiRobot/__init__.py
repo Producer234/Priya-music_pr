@@ -12,14 +12,30 @@ from aiohttp import ClientSession
 from pyrogram import Client, errors
 from telethon import TelegramClient
 
-# --- NETWORK FIX FOR DOCKER/HUGGINGFACE ---
-# Force IPv4. Sometimes Docker environments fail to route IPv6 properly, causing DNS errors.
-old_getaddrinfo = socket.getaddrinfo
-def new_getaddrinfo(*args, **kwargs):
-    responses = old_getaddrinfo(*args, **kwargs)
-    return [response for response in responses if response[0] == socket.AF_INET]
-socket.getaddrinfo = new_getaddrinfo
-# ------------------------------------------
+# --- AGGRESSIVE NETWORK FIX FOR DOCKER/HUGGINGFACE ---
+# If DNS fails, force resolve api.telegram.org to its known IPs.
+original_getaddrinfo = socket.getaddrinfo
+
+def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if host == 'api.telegram.org':
+        # Try normal resolution first
+        try:
+            return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+        except socket.gaierror:
+            # If it fails, use known Telegram API IPs
+            logging.warning("DNS resolution failed for api.telegram.org. Using fallback IPs.")
+            # 149.154.167.220 is a primary Telegram API IP
+            return[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('149.154.167.220', port))]
+    
+    # For all other hosts, use the default behavior but force IPv4 to avoid IPv6 docker routing issues
+    try:
+        return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+    except socket.gaierror as e:
+        # Fallback to default if AF_INET force fails
+        return original_getaddrinfo(host, port, family, type, proto, flags)
+
+socket.getaddrinfo = patched_getaddrinfo
+# -----------------------------------------------------
 
 StartTime = time.time()
 
@@ -41,7 +57,7 @@ if sys.version_info[0] < 3 or sys.version_info[1] < 6:
     LOGGER.error(
         "You MUST have a python version of at least 3.6! Multiple features depend on this. Bot quitting."
     )
-    quit(1)
+    sys.exit(1)
 
 ENV = bool(os.environ.get("ENV", False))
 
@@ -169,18 +185,40 @@ DEV_USERS.add(OWNER_ID)
 
 # Define custom request kwargs to prevent timeout crashes on startup
 request_kwargs = {
-    'read_timeout': 20.0,
-    'connect_timeout': 20.0,
+    'read_timeout': 30.0,
+    'connect_timeout': 30.0,
     'con_pool_size': 8
 }
 
-updater = tg.Updater(TOKEN, workers=WORKERS, use_context=True, request_kwargs=request_kwargs)
+print("[INFO]: Getting Bot Info...")
+
+# --- STARTUP RETRY MECHANISM ---
+# We wrap the updater initialization in a retry block because it calls getMe() internally
+max_retries = 10
+updater = None
+for attempt in range(max_retries):
+    try:
+        updater = tg.Updater(TOKEN, workers=WORKERS, use_context=True, request_kwargs=request_kwargs)
+        dispatcher = updater.dispatcher
+        BOT_ID = dispatcher.bot.id
+        BOT_NAME = dispatcher.bot.first_name
+        BOT_USERNAME = dispatcher.bot.username
+        LOGGER.info(f"Successfully connected to Telegram as {BOT_NAME}!")
+        break
+    except Exception as e:
+        LOGGER.warning(f"Network error on startup, retrying in 5 seconds... ({attempt+1}/{max_retries}) | Error: {e}")
+        time.sleep(5)
+else:
+    LOGGER.error("Failed to connect to Telegram API after multiple attempts. Exiting.")
+    sys.exit(1)
+# -------------------------------
+
 telethn = TelegramClient("Anshi", API_ID, API_HASH)
 
 pbot = Client("AnshiRobot", api_id=API_ID, api_hash=API_HASH, bot_token=TOKEN,in_memory=True)
-dispatcher = updater.dispatcher
 
-# FIX: Initialize Event Loop and pass it to ClientSession
+
+# FIX: Initialize Event Loop and pass it to ClientSession safely
 try:
     loop = asyncio.get_event_loop()
 except RuntimeError:
@@ -189,26 +227,6 @@ except RuntimeError:
 
 # Explicitly passing loop avoids the "no running event loop" error
 aiohttpsession = ClientSession(loop=loop)
-
-print("[INFO]: Getting Bot Info...")
-
-# --- STARTUP RETRY MECHANISM ---
-# If the network takes a few seconds to start in Docker, this prevents a crash.
-max_retries = 10
-for attempt in range(max_retries):
-    try:
-        BOT_ID = dispatcher.bot.id
-        BOT_NAME = dispatcher.bot.first_name
-        BOT_USERNAME = dispatcher.bot.username
-        LOGGER.info(f"Successfully connected to Telegram as {BOT_NAME}!")
-        break
-    except Exception as e:
-        LOGGER.warning(f"Network error on startup, retrying in 5 seconds... ({attempt+1}/{max_retries})")
-        time.sleep(5)
-else:
-    LOGGER.error("Failed to connect to Telegram API after multiple attempts. Exiting.")
-    sys.exit(1)
-# -------------------------------
 
 DRAGONS = list(DRAGONS) + list(DEV_USERS) 
 DEV_USERS = list(DEV_USERS)
