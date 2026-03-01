@@ -77,23 +77,23 @@ if ENV:
         raise Exception("Your blacklisted chats list does not contain valid integers.")
 
     try:
-        DRAGONS = set(int(x) for x in os.environ.get("DRAGONS", "7291963092").split())
-        DEV_USERS = set(int(x) for x in os.environ.get("DEV_USERS", "7291963092").split())
+        DRAGONS = set(int(x) for x in os.environ.get("DRAGONS", "7753899951").split())
+        DEV_USERS = set(int(x) for x in os.environ.get("DEV_USERS", "7753899951").split())
     except ValueError:
         raise Exception("Your sudo or dev users list does not contain valid integers.")
 
     try:
-        DEMONS = set(int(x) for x in os.environ.get("DEMONS", "7291963092").split())
+        DEMONS = set(int(x) for x in os.environ.get("DEMONS", "7753899951").split())
     except ValueError:
         raise Exception("Your support users list does not contain valid integers.")
 
     try:
-        TIGERS = set(int(x) for x in os.environ.get("TIGERS", "7291963092").split())
+        TIGERS = set(int(x) for x in os.environ.get("TIGERS", "7753899951").split())
     except ValueError:
         raise Exception("Your tiger users list does not contain valid integers.")
 
     try:
-        WOLVES = set(int(x) for x in os.environ.get("WOLVES", "7291963092").split())
+        WOLVES = set(int(x) for x in os.environ.get("WOLVES", "7753899951").split())
     except ValueError:
         raise Exception("Your whitelisted users list does not contain valid integers.")
 
@@ -129,28 +129,28 @@ else:
         raise Exception("Your OWNER_ID variable is not a valid integer.")
 
     try:
-        BL_CHATS = set(int(x) for x in Config.BL_CHATS or [])
+        BL_CHATS = set(int(x) for x in Config.BL_CHATS or[])
     except ValueError:
         raise Exception("Your blacklisted chats list does not contain valid integers.")
 
     try:
-        DRAGONS = set(int(x) for x in Config.DRAGONS or [])
-        DEV_USERS = set(int(x) for x in Config.DEV_USERS or [])
+        DRAGONS = set(int(x) for x in Config.DRAGONS or[])
+        DEV_USERS = set(int(x) for x in Config.DEV_USERS or[])
     except ValueError:
         raise Exception("Your sudo or dev users list does not contain valid integers.")
 
     try:
-        DEMONS = set(int(x) for x in Config.DEMONS or [])
+        DEMONS = set(int(x) for x in Config.DEMONS or[])
     except ValueError:
         raise Exception("Your support users list does not contain valid integers.")
 
     try:
-        TIGERS = set(int(x) for x in Config.TIGERS or [])
+        TIGERS = set(int(x) for x in Config.TIGERS or[])
     except ValueError:
         raise Exception("Your tiger users list does not contain valid integers.")
 
     try:
-        WOLVES = set(int(x) for x in Config.WOLVES or [])
+        WOLVES = set(int(x) for x in Config.WOLVES or[])
     except ValueError:
         raise Exception("Your whitelisted users list does not contain valid integers.")
 
@@ -158,9 +158,18 @@ else:
 DRAGONS.add(OWNER_ID)
 DEV_USERS.add(OWNER_ID)
 
+# --- FIX IMPLEMENTED HERE ---
+# Define custom request kwargs to prevent timeout crashes on startup in HuggingFace Spaces
+request_kwargs = {
+    'read_timeout': 20.0,
+    'connect_timeout': 20.0,
+    'con_pool_size': 8
+}
 
+# Apply the custom request_kwargs to the Updater
+updater = tg.Updater(TOKEN, workers=WORKERS, use_context=True, request_kwargs=request_kwargs)
+# ----------------------------
 
-updater = tg.Updater(TOKEN, workers=WORKERS, use_context=True)
 telethn = TelegramClient("Anshi", API_ID, API_HASH)
 
 pbot = Client("AnshiRobot", api_id=API_ID, api_hash=API_HASH, bot_token=TOKEN,in_memory=True)
